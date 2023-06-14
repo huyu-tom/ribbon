@@ -28,28 +28,27 @@ import com.netflix.client.config.IClientConfig;
 /**
  * A rule that uses the a {@link CompositePredicate} to filter servers based on zone and availability. The primary predicate is composed of
  * a {@link ZoneAvoidancePredicate} and {@link AvailabilityPredicate}, with the fallbacks to {@link AvailabilityPredicate}
- * and an "always true" predicate returned from {@link AbstractServerPredicate#alwaysTrue()} 
- * 
- * @author awang
+ * and an "always true" predicate returned from {@link AbstractServerPredicate#alwaysTrue()}
  *
+ * @author awang
  */
 public class ZoneAvoidanceRule extends PredicateBasedRule {
 
     private static final Random random = new Random();
-    
+
     private CompositePredicate compositePredicate;
-    
+
     public ZoneAvoidanceRule() {
         ZoneAvoidancePredicate zonePredicate = new ZoneAvoidancePredicate(this);
         AvailabilityPredicate availabilityPredicate = new AvailabilityPredicate(this);
         compositePredicate = createCompositePredicate(zonePredicate, availabilityPredicate);
     }
-    
+
     private CompositePredicate createCompositePredicate(ZoneAvoidancePredicate p1, AvailabilityPredicate p2) {
         return CompositePredicate.withPredicates(p1, p2)
-                             .addFallbackPredicate(p2)
-                             .addFallbackPredicate(AbstractServerPredicate.alwaysTrue())
-                             .build();
+                .addFallbackPredicate(p2)
+                .addFallbackPredicate(AbstractServerPredicate.alwaysTrue())
+                .build();
     }
 
     @Override
@@ -69,7 +68,7 @@ public class ZoneAvoidanceRule extends PredicateBasedRule {
     }
 
     static String randomChooseZone(Map<String, ZoneSnapshot> snapshot,
-            Set<String> chooseFrom) {
+                                   Set<String> chooseFrom) {
         if (chooseFrom == null || chooseFrom.size() == 0) {
             return null;
         }
@@ -111,11 +110,16 @@ public class ZoneAvoidanceRule extends PredicateBasedRule {
             String zone = zoneEntry.getKey();
             ZoneSnapshot zoneSnapshot = zoneEntry.getValue();
             int instanceCount = zoneSnapshot.getInstanceCount();
+
+            //如果分区的实例为0,就移除该分区
             if (instanceCount == 0) {
                 availableZones.remove(zone);
                 limitedZoneAvailability = true;
             } else {
+                //获取每台机器的负载能力
                 double loadPerServer = zoneSnapshot.getLoadPerServer();
+
+                //获取跳闸的次数
                 if (((double) zoneSnapshot.getCircuitTrippedCount())
                         / instanceCount >= triggeringBlackoutPercentage
                         || loadPerServer < 0) {
@@ -139,6 +143,8 @@ public class ZoneAvoidanceRule extends PredicateBasedRule {
             // zone override is not needed here
             return availableZones;
         }
+
+
         String zoneToAvoid = randomChooseZone(snapshot, worstZones);
         if (zoneToAvoid != null) {
             availableZones.remove(zoneToAvoid);
@@ -148,7 +154,7 @@ public class ZoneAvoidanceRule extends PredicateBasedRule {
     }
 
     public static Set<String> getAvailableZones(LoadBalancerStats lbStats,
-            double triggeringLoad, double triggeringBlackoutPercentage) {
+                                                double triggeringLoad, double triggeringBlackoutPercentage) {
         if (lbStats == null) {
             return null;
         }
@@ -160,5 +166,5 @@ public class ZoneAvoidanceRule extends PredicateBasedRule {
     @Override
     public AbstractServerPredicate getPredicate() {
         return compositePredicate;
-    }    
+    }
 }
