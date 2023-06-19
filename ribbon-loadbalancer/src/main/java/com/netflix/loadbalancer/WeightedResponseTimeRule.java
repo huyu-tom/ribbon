@@ -1,20 +1,20 @@
 /*
-*
-* Copyright 2013 Netflix, Inc.
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-* http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
-*
-*/
+ *
+ * Copyright 2013 Netflix, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ */
 package com.netflix.loadbalancer;
 
 import com.netflix.client.config.IClientConfig;
@@ -31,15 +31,15 @@ import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/** 
+/**
  * Rule that use the average/percentile response times
- * to assign dynamic "weights" per Server which is then used in 
- * the "Weighted Round Robin" fashion. 
+ * to assign dynamic "weights" per Server which is then used in
+ * the "Weighted Round Robin" fashion.
  * <p>
  * The basic idea for weighted round robin has been obtained from JCS
  * The implementation for choosing the endpoint from the list of endpoints
- * is as follows:Let's assume 4 endpoints:A(wt=10), B(wt=30), C(wt=40), 
- * D(wt=20). 
+ * is as follows:Let's assume 4 endpoints:A(wt=10), B(wt=30), C(wt=40),
+ * D(wt=20).
  * <p>
  * Using the Random API, generate a random number between 1 and10+30+40+20.
  * Let's assume that the above list is randomized. Based on the weights, we
@@ -64,7 +64,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * else if (random_number between 81 &amp; 100) {send request to D;}
  * <p>
  * When there is not enough statistics gathered for the servers, this rule
- * will fall back to use {@link RoundRobinRule}. 
+ * will fall back to use {@link RoundRobinRule}.
+ *
  * @author stonse
  */
 public class WeightedResponseTimeRule extends RoundRobinRule {
@@ -74,7 +75,7 @@ public class WeightedResponseTimeRule extends RoundRobinRule {
         public String key() {
             return "ServerWeightTaskTimerInterval";
         }
-        
+
         @Override
         public String toString() {
             return key();
@@ -85,17 +86,17 @@ public class WeightedResponseTimeRule extends RoundRobinRule {
             return Integer.class;
         }
     };
-    
+
     public static final int DEFAULT_TIMER_INTERVAL = 30 * 1000;
-    
+
     private int serverWeightTaskTimerInterval = DEFAULT_TIMER_INTERVAL;
 
     private static final Logger logger = LoggerFactory.getLogger(WeightedResponseTimeRule.class);
-    
+
     // holds the accumulated weight from index 0 to current index
     // for example, element at index 2 holds the sum of weight of servers from 0 to 2
     private volatile List<Double> accumulatedWeights = new ArrayList<Double>();
-    
+
 
     private final Random random = new Random();
 
@@ -112,7 +113,7 @@ public class WeightedResponseTimeRule extends RoundRobinRule {
     public WeightedResponseTimeRule(ILoadBalancer lb) {
         super(lb);
     }
-    
+
     @Override
     public void setLoadBalancer(ILoadBalancer lb) {
         super.setLoadBalancer(lb);
@@ -122,7 +123,7 @@ public class WeightedResponseTimeRule extends RoundRobinRule {
         initialize(lb);
     }
 
-    void initialize(ILoadBalancer lb) {        
+    void initialize(ILoadBalancer lb) {
         if (serverWeightTimer != null) {
             serverWeightTimer.cancel();
         }
@@ -130,10 +131,12 @@ public class WeightedResponseTimeRule extends RoundRobinRule {
                 + name, true);
         serverWeightTimer.schedule(new DynamicServerWeightTask(), 0,
                 serverWeightTaskTimerInterval);
+
         // do a initial run
         ServerWeight sw = new ServerWeight();
         sw.maintainWeights();
 
+        //钩子,当系统关闭的时候进行清理
         Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
             public void run() {
                 logger
@@ -180,12 +183,12 @@ public class WeightedResponseTimeRule extends RoundRobinRule {
             int serverIndex = 0;
 
             // last one in the list is the sum of all weights
-            double maxTotalWeight = currentWeights.size() == 0 ? 0 : currentWeights.get(currentWeights.size() - 1); 
+            double maxTotalWeight = currentWeights.size() == 0 ? 0 : currentWeights.get(currentWeights.size() - 1);
             // No server has been hit yet and total weight is not initialized
             // fallback to use round robin
             if (maxTotalWeight < 0.001d || serverCount != currentWeights.size()) {
-                server =  super.choose(getLoadBalancer(), key);
-                if(server == null) {
+                server = super.choose(getLoadBalancer(), key);
+                if (server == null) {
                     return server;
                 }
             } else {
@@ -239,11 +242,11 @@ public class WeightedResponseTimeRule extends RoundRobinRule {
             if (lb == null) {
                 return;
             }
-            
-            if (!serverWeightAssignmentInProgress.compareAndSet(false,  true))  {
-                return; 
+
+            if (!serverWeightAssignmentInProgress.compareAndSet(false, true)) {
+                return;
             }
-            
+
             try {
                 logger.info("Weight adjusting job started");
                 AbstractLoadBalancer nlb = (AbstractLoadBalancer) lb;
@@ -252,24 +255,31 @@ public class WeightedResponseTimeRule extends RoundRobinRule {
                     // no statistics, nothing to do
                     return;
                 }
+
+
+                //总的权重
                 double totalResponseTime = 0;
+
                 // find maximal 95% response time
                 for (Server server : nlb.getAllServers()) {
                     // this will automatically load the stats if not in cache
                     ServerStats ss = stats.getSingleServerStat(server);
                     totalResponseTime += ss.getResponseTimeAvg();
                 }
+
+
+                // 响应时间越长,他的概率就越低,响应时间越短,他的概率就越高
                 // weight for each server is (sum of responseTime of all servers - responseTime)
                 // so that the longer the response time, the less the weight and the less likely to be chosen
                 Double weightSoFar = 0.0;
-                
+
                 // create new list and hot swap the reference
                 List<Double> finalWeights = new ArrayList<Double>();
                 for (Server server : nlb.getAllServers()) {
                     ServerStats ss = stats.getSingleServerStat(server);
                     double weight = totalResponseTime - ss.getResponseTimeAvg();
                     weightSoFar += weight;
-                    finalWeights.add(weightSoFar);   
+                    finalWeights.add(weightSoFar);
                 }
                 setWeights(finalWeights);
             } catch (Exception e) {
